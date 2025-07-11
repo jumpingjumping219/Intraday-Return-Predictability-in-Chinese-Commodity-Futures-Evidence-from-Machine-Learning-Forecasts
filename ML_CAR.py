@@ -21,9 +21,9 @@ parser.add_argument("--lag", type=int, default=3,
                     help="滞后阶数 (lag)")
 parser.add_argument("--train_month", type=int, default=1,
                     help="每个滚动窗口的训练月份数")
-parser.add_argument("--start_date", type='str', default='2018-01-01',
+parser.add_argument("--start_date", type=str, default='2018-01-01',
                     help="开始训练时间")
-parser.add_argument("--end_date", type='str', default='2024-12-31',
+parser.add_argument("--end_date", type=str, default='2024-12-31',
                     help="结束时间")
 opt = parser.parse_args()
 
@@ -104,36 +104,36 @@ def build_multi_matrix(df: pd.DataFrame, lag:int=3):
 def train_and_select_model(Xtr, ytr, Xva, yva, model_name="ridge", n_iter=10):
     cfg = param_spaces[model_name]
     base_est = cfg["est"]
-    if not hasattr(base_est, "n_outputs_"):
-        base_est = MultiOutputRegressor(base_est, n_jobs=-1)
+
+    if model_name in {"ridge", "lasso", "enet"}:
+        base_est_final = MultiOutputRegressor(base_est, n_jobs=-1)
+        grid_final = {f'estimator__{k}': v for k, v in cfg["grid"].items()}
+    else:                  # rf / xrf / gbt 直接用
+        base_est_final = base_est
+        grid_final = cfg["grid"]
 
     psplit = PredefinedSplit(
-        test_fold = np.r_[np.zeros(len(Xtr)), np.ones(len(Xva))]  # train=0, valid=1
+        test_fold=np.r_[np.zeros(len(Xtr)), np.ones(len(Xva))]
     )
-
     X_all = pd.concat([Xtr, Xva])
     y_all = pd.concat([ytr, yva])
 
+
     search = RandomizedSearchCV(
-        base_est,
-        param_distributions=cfg["grid"],
-        cv=psplit,
+        base_est_final,
+        param_distributions=grid_final,
         n_iter=n_iter,
         scoring="neg_mean_squared_error",
-        refit=False,
-        n_jobs=-1
+        cv=psplit,
+        n_jobs=-1,
+        refit=False
     )
     search.fit(X_all, y_all)
     best_params = search.best_params_
 
-    if isinstance(base_est, MultiOutputRegressor):
-        final_est = MultiOutputRegressor(cfg["est"].set_params(**best_params),
-                                         n_jobs=-1)
-    else:
-        final_est = cfg["est"].set_params(**best_params)
-
-    final_est.fit(X_all, y_all)
-    return final_est
+    best_est = base_est_final.set_params(**best_params)
+    best_est.fit(X_all, y_all)
+    return best_est
 
 def month_end(d):                   
     y, m = d.year, d.month
@@ -142,7 +142,8 @@ def month_end(d):
 def rolling_forecast_multi(X, Y, start_date, end_date,
                            train_month=1,              
                            target_model="ridge"):
-    dt_index = X.index                    
+    dt_index = X.index        
+    y_cols = [f"y_{c}" for c in Y.columns]            
     full_df  = pd.concat([Y.add_prefix("y_"), X], axis=1)   
 
     preds_ls, cur = [], start_date
@@ -161,11 +162,12 @@ def rolling_forecast_multi(X, Y, start_date, end_date,
 
         # ——— 划分
         Xtr = full_df.loc[mask_tr,  X.columns]
-        Ytr = full_df.loc[mask_tr,  Y.columns]
         Xva = full_df.loc[mask_va,  X.columns]
-        Yva = full_df.loc[mask_va,  Y.columns]
         Xte = full_df.loc[mask_te,  X.columns]
-        Yte = full_df.loc[mask_te,  Y.columns]
+
+        Ytr = full_df.loc[mask_tr,  y_cols]           
+        Yva = full_df.loc[mask_va,  y_cols]           
+        Yte = full_df.loc[mask_te,  y_cols]  
 
         # ——— 标准化 (fit on train)
         scaler = StandardScaler().fit(Xtr)
