@@ -21,6 +21,10 @@ parser.add_argument("--lag", type=int, default=3,
                     help="滞后阶数 (lag)")
 parser.add_argument("--train_month", type=int, default=1,
                     help="每个滚动窗口的训练月份数")
+parser.add_argument("--start_date", type='str', default='2018-01-01',
+                    help="开始训练时间")
+parser.add_argument("--end_date", type='str', default='2024-12-31',
+                    help="结束时间")
 opt = parser.parse_args()
 
 
@@ -203,14 +207,12 @@ if __name__ == "__main__":
     pivot = com.pivot(index="datetime", columns="underlying_symbol",
                       values="log_ret").iloc[1:,:]
 
-    # 剔首尾一分钟
     df = pivot.reset_index()
     df['date'] = df['datetime'].dt.date
     df = df.groupby('date', group_keys=False).apply(lambda g: g.iloc[1:-1])
     df.drop(columns='date', inplace=True)
     df.set_index('datetime', inplace=True)
 
-    # —— 构造 X, Y
     X, Y = build_multi_matrix(df, lag=opt.lag)
     param_spaces = make_param_spaces(X.shape[1])
     start_dt = datetime.datetime(2018,1,1)
@@ -223,5 +225,5 @@ if __name__ == "__main__":
                                     target_model = opt.model)
 
     out_name = f"all_preds_{opt.model}_lag{opt.lag}_tm{opt.train_month}.parquet"
-    preds.to_parquet(f"/home/JunpingZhu/{out_name}", engine="fastparquet")
+    preds.to_parquet(f"/home/JunpingZhu/output/{out_name}", engine="fastparquet")
     print(f"Done! 结果保存为 {out_name}")
