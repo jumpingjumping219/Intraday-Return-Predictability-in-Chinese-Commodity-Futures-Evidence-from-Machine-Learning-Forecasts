@@ -28,7 +28,6 @@ parser.add_argument("--end_date", type=str, default='2024-12-31',
 opt = parser.parse_args()
 
 
-alpha_grid  = np.logspace(-5, 3, 20)
 max_depth   = list(range(1, 20))
 def col_frac_grid(n_feat):
     fracs = [0.05, 0.15, 0.25, 0.333, 0.4]
@@ -42,13 +41,6 @@ def make_param_spaces(n_feat: int):
     max_feat_int= col_frac_grid(n_feat)
 
     spaces = {
-        # ── 线性模型 ──
-        "ridge": {"est": Ridge(), "grid": {"alpha": alpha_grid}},
-        "lasso": {"est": Lasso(max_iter=5000), "grid": {"alpha": alpha_grid}},
-        "enet" : {"est": ElasticNet(max_iter=5000),
-                  "grid": {"alpha": alpha_grid,
-                           "l1_ratio": [0.1,0.3,0.5,0.7,0.9]}},
-
         # ── RF ──
         "rf": {
             "est": RandomForestRegressor(
