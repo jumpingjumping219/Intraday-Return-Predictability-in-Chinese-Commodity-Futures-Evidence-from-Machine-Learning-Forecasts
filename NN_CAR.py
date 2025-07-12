@@ -1,12 +1,16 @@
-
+import argparse
 import os, random, datetime, numpy as np, pandas as pd, torch, torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from dateutil.relativedelta import relativedelta
 from sklearn.preprocessing import StandardScaler
 
-os.environ["OMP_NUM_THREADS"]  = "32"   # 根据 CPU 情况自行调整
+os.environ["OMP_NUM_THREADS"]  = "32"  
 os.environ["MKL_NUM_THREADS"]  = "32"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+num = int(os.getenv("OMP_NUM_THREADS", "32"))
+torch.set_num_threads(num)          # 运算线程
+torch.set_num_interop_threads(1)    # 算子调度线程
+
 
 param_grid = {
     "epochs" : [50, 100],
@@ -17,10 +21,21 @@ param_grid = {
     "rho"    : [0.90, 0.95, 0.99, 0.999],
     "eps"    : [1e-10, 1e-8, 1e-6, 1e-4],
 }
-depth_cfg = {"NN2":[32, 16]}                  # 你常用的 NN2 结构
-AMP_ENABLE = True                             # 自动混合精度
+depth_cfg = {                           
+    "NN1": [32],
+    "NN2": [32, 16],
+    "NN3": [32, 16, 8],
+    "NN4": [32, 16, 8, 4],
+    "NN5": [32, 16, 8, 4, 2],
+}             
+AMP_ENABLE = True                            
 
-# ───────────────────────────── 1. 数据构造 ──────────────────────────────
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", type=str, default="NN2",
+                    choices=["NN1","NN2","NN3","NN4","NN5"],
+                    help="选择网络深度结构")
+opt = parser.parse_args()
+
 def build_multi_matrix(df: pd.DataFrame, lag: int = 3):
     """将 (T, N) price/return 表 -> X=(T, N*lag), Y=(T, N)"""
     lagged = [df.shift(i).add_suffix(f"_lag{i}") for i in range(lag)]
@@ -29,7 +44,7 @@ def build_multi_matrix(df: pd.DataFrame, lag: int = 3):
     m = X.notna().all(1) & Y.notna().all(1)
     return X.loc[m].values, Y.loc[m].values, X.index[m]
 
-# ───────────────────────────── 2. 网络构造 ──────────────────────────────
+
 def _block(sizes, drop):
     layers = []
     for i in range(len(sizes) - 1):
@@ -41,13 +56,13 @@ def _block(sizes, drop):
     return nn.Sequential(*layers)
 
 def make_net(name, in_dim, out_dim, drop):
-    hidden = depth_cfg[name]
+    hidden = depth_cfg[name]           
     return nn.Sequential(
         _block([in_dim] + hidden, drop),
         nn.Linear(hidden[-1], out_dim)
     )
 
-# ───────────────────────────── 3. 训练单次模型 ──────────────────────────
+
 def train_one(model, X, Y, Xv, Yv, cfg, batch_size=2048):
     crit = nn.SmoothL1Loss(beta=0.999)
     opt  = torch.optim.Adadelta(model.parameters(),
@@ -93,7 +108,6 @@ def train_one(model, X, Y, Xv, Yv, cfg, batch_size=2048):
     model.load_state_dict(best_state)
     return best
 
-# ───────────────────────────── 4. 随机搜索 + 集成 ────────────────────────
 def fit_best(name, Xtr, Ytr, Xva, Yva, n_iter=5, n_restart=3):
     best, best_cfg = np.inf, None
     for _ in range(n_iter):
@@ -116,7 +130,7 @@ def fit_best(name, Xtr, Ytr, Xva, Yva, n_iter=5, n_restart=3):
     ensemble_pred = np.mean(preds, axis=0)
     return models, ensemble_pred
 
-# ───────────────────────────── 5. 滚动窗口多输出 ────────────────────────
+
 def month_end(d):
     y, m = d.year, d.month
     return datetime.datetime(y + (m == 12), (m % 12) + 1, 1) - datetime.timedelta(days=1)
@@ -167,12 +181,12 @@ def rolling_multi(df, lag=3,
 
     return pd.concat(preds_list)
 
-# ───────────────────────────── 6. 主程序 ────────────────────────────────
+
 if __name__ == "__main__":
     import fastparquet, warnings
     warnings.filterwarnings("ignore", category=FutureWarning)
 
-    path = "/home/JunpingZhu/com_1m_bar.parquet"
+    path = "/home/JunpingZhu/input/com_1m_bar.parquet"
     com = pd.read_parquet(path, engine="fastparquet")
     com.reset_index(inplace=True)
 
@@ -210,7 +224,9 @@ if __name__ == "__main__":
     preds = rolling_multi(df, lag=3,
                           start_date=datetime.datetime(2018,1,1),
                           end_date  =datetime.datetime(2024,12,31),
-                          model_name="NN2")
-    preds.to_parquet("/home/JunpingZhu/all_preds_multiNN2.parquet",
-                     engine="fastparquet")
+                          model_name=opt.model)
+    preds.to_parquet(
+        f"/home/JunpingZhu/output/all_preds_multi{opt.model}.parquet",
+        engine="fastparquet"
+    )
     print("Done! 预测结果已保存。")
