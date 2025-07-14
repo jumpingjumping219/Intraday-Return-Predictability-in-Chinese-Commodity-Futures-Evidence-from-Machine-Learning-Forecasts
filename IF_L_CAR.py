@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Individual-fitting rolling forecast (OLS-family)
+Individual-fitting rolling forecast with Gridsearch
 -----------------------------------------------
 python IF_L_CAR.py \
   --data_path /home/JunpingZhu/input/com_1m_bar.parquet \

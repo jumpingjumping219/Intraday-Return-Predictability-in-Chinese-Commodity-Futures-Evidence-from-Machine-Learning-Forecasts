@@ -3,7 +3,9 @@
 """
 Individual fitting with RandomizedSearchCV
 -----------------------------------------
-loop every symbol; keep RandomizedSearchCV
+python IF_L_CAR.py \
+  --data_path /home/JunpingZhu/input/com_1m_bar.parquet \
+  --model rf --lag 3 --train_month 1
 """
 
 import argparse, warnings, datetime, numpy as np, pandas as pd, fastparquet
