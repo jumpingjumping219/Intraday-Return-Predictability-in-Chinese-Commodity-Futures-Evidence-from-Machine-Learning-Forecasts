@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_path",   type=str, default="/home/JunpingZhu/com_1m_bar.parquet")
 parser.add_argument("--model",       type=str, default="rf",
-                    choices=["rf","xrf","gbt","ridge","lasso","enet"])
+                    choices=["rf","xrf","gbt"])
 parser.add_argument("--lag",         type=int, default=3)
 parser.add_argument("--train_month", type=int, default=1)
 parser.add_argument("--start_date",  type=str, default="2018-01-01")
